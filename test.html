@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Connection Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #1a1a1a; color: white; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #10b981; }
+        .error { background: #ef4444; }
+        .info { background: #3b82f6; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        #log { background: #2a2a2a; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 WebSocket Connection Test</h1>
+    
+    <div id="status" class="status info">Testing connection...</div>
+    
+    <div>
+        <button onclick="testConnection()">Test Connection</button>
+        <button onclick="testJoin()">Test Join</button>
+        <button onclick="testMessage()">Test Message</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <h3>Log:</h3>
+    <div id="log"></div>
+
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script>
+        const SERVER_URL = 'http://localhost:3000';
+        let socket = null;
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div style="color: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6'}">[${time}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function updateStatus(message, className) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + className;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        function testConnection() {
+            log('Attempting to connect to ' + SERVER_URL);
+            
+            if (socket) {
+                socket.disconnect();
+            }
+            
+            socket = io(SERVER_URL, {
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 5
+            });
+            
+            socket.on('connect', () => {
+                log('✓ Connected! Socket ID: ' + socket.id, 'success');
+                updateStatus('✓ Connected to backend', 'success');
+            });
+            
+            socket.on('disconnect', () => {
+                log('✗ Disconnected', 'error');
+                updateStatus('✗ Disconnected', 'error');
+            });
+            
+            socket.on('connect_error', (error) => {
+                log('✗ Connection error: ' + error.message, 'error');
+                updateStatus('✗ Connection failed', 'error');
+            });
+            
+            socket.on('chat-history', (messages) => {
+                log('✓ Received chat history: ' + messages.length + ' messages', 'success');
+            });
+            
+            socket.on('user-joined', (data) => {
+                log('✓ User joined: ' + data.username, 'success');
+            });
+            
+            socket.on('chat-message', (data) => {
+                log('✓ Message received: ' + data.username + ': ' + data.text, 'success');
+            });
+            
+            socket.on('error', (data) => {
+                log('✗ Server error: ' + data.message, 'error');
+            });
+        }
+        
+        function testJoin() {
+            if (!socket || !socket.connected) {
+                log('✗ Not connected! Click "Test Connection" first', 'error');
+                return;
+            }
+            
+            const username = 'TestUser' + Math.floor(Math.random() * 100);
+            log('Sending join request with username: ' + username);
+            socket.emit('user-join', username);
+        }
+        
+        function testMessage() {
+            if (!socket || !socket.connected) {
+                log('✗ Not connected! Click "Test Connection" first', 'error');
+                return;
+            }
+            
+            const message = 'Test message at ' + new Date().toLocaleTimeString();
+            log('Sending message: ' + message);
+            socket.emit('chat-message', { text: message });
+        }
+        
+        // Auto-test on load
+        window.onload = () => {
+            log('Page loaded. Click "Test Connection" to start.');
+        };
+    </script>
+</body>
+</html>
