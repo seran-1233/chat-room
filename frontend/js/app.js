@@ -1,9 +1,8 @@
 // ==================== Configuration ====================
-// Auto-detect environment
-const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-const SERVER_URL = isProduction 
-    ? 'https://chat-room-backend-2q18.onrender.com'  // Your Render backend URL
-    : 'http://localhost:3000';
+// Use same domain for both frontend and backend
+const SERVER_URL = window.location.origin;  // Uses same Vercel URL
+
+console.log('🔌 Connecting to:', SERVER_URL);  // Debug log
 
 // ==================== State Management ====================
 let socket = null;

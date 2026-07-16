@@ -9,15 +9,21 @@ const app = express();
 const server = http.createServer(app);
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  credentials: true
+}));
 app.use(express.json());
 
 // Initialize Socket.IO with CORS
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['polling', 'websocket'],
+  allowEIO3: true
 });
 
 // Initialize Supabase client
@@ -165,10 +171,17 @@ io.on('connection', (socket) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Supabase URL: ${supabaseUrl ? 'Configured' : 'Not configured'}`);
-});
+
+// For Vercel serverless
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  // For local development
+  server.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Supabase URL: ${supabaseUrl ? 'Configured' : 'Not configured'}`);
+  });
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
