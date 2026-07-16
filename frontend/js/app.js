@@ -2,7 +2,7 @@
 // Auto-detect environment
 const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 const SERVER_URL = isProduction 
-    ? 'https://chat-room-backend.onrender.com'  // CHANGE THIS to your Render URL after deployment
+    ? 'https://chat-room-backend-2q18.onrender.com'  // Your Render backend URL
     : 'http://localhost:3000';
 
 // ==================== State Management ====================
