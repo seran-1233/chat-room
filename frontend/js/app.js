@@ -403,7 +403,7 @@ window.addEventListener('beforeunload', () => {
 // ==================== Initialization ====================
 
 function init() {
-    console.log('🚀 Chat app with Vercel + Supabase Realtime');
+    console.log('🚀 Chat app v1.1 - Vercel + Supabase Realtime');
     updateConnectionStatus(false);
     usernameInput.focus();
 }
