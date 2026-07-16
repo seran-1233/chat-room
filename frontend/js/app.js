@@ -1,15 +1,22 @@
 // ==================== Configuration ====================
-// Backend URL - update this with your ngrok URL when running locally
-const SERVER_URL = 'http://localhost:3000';  // Change to your ngrok URL for production
+// Supabase Configuration - everything runs on Vercel!
+const SUPABASE_URL = 'https://jgyvmrhjmjsswyqdglbp.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpneXZtcmhqbWpzc3d5cWRnbGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDcxOTUsImV4cCI6MjA5OTY4MzE5NX0.YjL5qGVYYXqT-s8pIvLSqE3n_YFqbxT7XYn5qGVYYXo';
 
-console.log('🔌 Connecting to:', SERVER_URL);  // Debug log
+console.log('🔌 Connecting to Supabase Realtime (Vercel Compatible)');
+
+// Initialize Supabase client
+const { createClient } = supabase;
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ==================== State Management ====================
-let socket = null;
 let currentUsername = '';
+let currentUserId = null;
 let isTyping = false;
 let typingTimeout = null;
 const typingUsers = new Set();
+let messageSubscription = null;
+let presenceChannel = null;
 
 // ==================== DOM Elements ====================
 const joinScreen = document.getElementById('join-screen');
@@ -29,9 +36,6 @@ const toggleSidebarBtn = document.getElementById('toggle-sidebar');
 
 // ==================== Utility Functions ====================
 
-/**
- * Format timestamp to readable time
- */
 function formatTime(timestamp) {
     const date = new Date(timestamp);
     const hours = date.getHours().toString().padStart(2, '0');
@@ -39,16 +43,10 @@ function formatTime(timestamp) {
     return `${hours}:${minutes}`;
 }
 
-/**
- * Get first letter of username for avatar
- */
 function getInitial(username) {
     return username.charAt(0).toUpperCase();
 }
 
-/**
- * Generate color from username
- */
 function getColorFromUsername(username) {
     const colors = [
         '#4f46e5', '#7c3aed', '#db2777', '#dc2626', 
@@ -58,16 +56,10 @@ function getColorFromUsername(username) {
     return colors[index % colors.length];
 }
 
-/**
- * Scroll messages to bottom
- */
 function scrollToBottom() {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-/**
- * Auto-scroll if user is near bottom
- */
 function autoScroll() {
     const threshold = 100;
     const scrollPosition = messagesContainer.scrollTop + messagesContainer.clientHeight;
@@ -80,9 +72,6 @@ function autoScroll() {
 
 // ==================== Message Rendering ====================
 
-/**
- * Add a chat message to the UI
- */
 function addMessage(username, text, timestamp, isOwn = false, status = 'delivered') {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isOwn ? 'own' : 'other'}`;
@@ -105,7 +94,6 @@ function addMessage(username, text, timestamp, isOwn = false, status = 'delivere
     contentDiv.className = 'message-content';
     contentDiv.textContent = text;
     
-    // Add timestamp and status checkmarks for own messages
     if (isOwn) {
         const metaDiv = document.createElement('div');
         metaDiv.className = 'message-meta';
@@ -119,17 +107,7 @@ function addMessage(username, text, timestamp, isOwn = false, status = 'delivere
         
         const statusIcon = document.createElement('span');
         statusIcon.className = `message-status-icon status-${status}`;
-        
-        // Set checkmark based on status
-        if (status === 'sending') {
-            statusIcon.textContent = '🕐'; // Clock icon
-        } else if (status === 'sent') {
-            statusIcon.textContent = '✓'; // Single checkmark
-        } else if (status === 'delivered') {
-            statusIcon.textContent = '✓✓'; // Double checkmark (gray)
-        } else if (status === 'read') {
-            statusIcon.textContent = '✓✓'; // Double checkmark (blue)
-        }
+        statusIcon.textContent = status === 'delivered' ? '✓✓' : '✓';
         
         statusSpan.appendChild(statusIcon);
         metaDiv.appendChild(timestampSpan);
@@ -144,9 +122,6 @@ function addMessage(username, text, timestamp, isOwn = false, status = 'delivere
     autoScroll();
 }
 
-/**
- * Add a system message (join/leave notifications)
- */
 function addSystemMessage(text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message system-message';
@@ -160,23 +135,32 @@ function addSystemMessage(text) {
     autoScroll();
 }
 
-/**
- * Load chat history
- */
-function loadChatHistory(messages) {
-    messages.forEach(msg => {
-        const isOwn = msg.username === currentUsername;
-        addMessage(msg.username, msg.text, msg.created_at, isOwn, 'delivered');
-    });
-    scrollToBottom();
+async function loadChatHistory() {
+    try {
+        const { data: messages, error } = await supabaseClient
+            .from('messages')
+            .select('*')
+            .order('created_at', { ascending: true })
+            .limit(100);
+        
+        if (error) throw error;
+        
+        messages.forEach(msg => {
+            const isOwn = msg.username === currentUsername;
+            addMessage(msg.username, msg.text, msg.created_at, isOwn, 'delivered');
+        });
+        scrollToBottom();
+        console.log('✓ Loaded', messages.length, 'messages');
+    } catch (error) {
+        console.error('Error loading chat history:', error);
+    }
 }
 
 // ==================== Online Users Management ====================
 
-/**
- * Update online users list
- */
-function updateOnlineUsers(users) {
+function updateOnlineUsers(presenceState) {
+    const users = Object.values(presenceState).map(presence => presence[0].username);
+    
     onlineUsersList.innerHTML = '';
     onlineCount.textContent = `${users.length} online`;
     
@@ -191,7 +175,6 @@ function updateOnlineUsers(users) {
         avatar.className = 'user-avatar';
         avatar.textContent = getInitial(username);
         avatar.style.background = getColorFromUsername(username);
-        avatar.title = 'Online';
         
         const nameContainer = document.createElement('span');
         nameContainer.className = 'user-name';
@@ -202,13 +185,7 @@ function updateOnlineUsers(users) {
             name.textContent += ' (you)';
         }
         
-        const status = document.createElement('span');
-        status.className = 'user-status';
-        status.textContent = 'online';
-        status.style.color = 'var(--primary-color)';
-        
         nameContainer.appendChild(name);
-        
         li.appendChild(avatar);
         li.appendChild(nameContainer);
         onlineUsersList.appendChild(li);
@@ -217,9 +194,6 @@ function updateOnlineUsers(users) {
 
 // ==================== Typing Indicator ====================
 
-/**
- * Update typing indicator display
- */
 function updateTypingIndicator() {
     if (typingUsers.size === 0) {
         typingIndicator.classList.add('hidden');
@@ -238,96 +212,96 @@ function updateTypingIndicator() {
     }
 }
 
-/**
- * Handle typing start
- */
 function handleTypingStart() {
-    if (!isTyping) {
+    if (!isTyping && presenceChannel) {
         isTyping = true;
-        socket.emit('typing-start');
+        presenceChannel.track({ 
+            username: currentUsername, 
+            typing: true 
+        });
     }
     
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
-        isTyping = false;
-        socket.emit('typing-stop');
+        if (isTyping && presenceChannel) {
+            isTyping = false;
+            presenceChannel.track({ 
+                username: currentUsername, 
+                typing: false 
+            });
+        }
     }, 2000);
 }
 
-// ==================== Socket Event Handlers ====================
+// ==================== Realtime Subscriptions ====================
 
-/**
- * Initialize Socket.IO connection
- */
-function initializeSocket() {
-    console.log('🔌 Initializing Socket.IO connection to:', SERVER_URL);
-    
-    socket = io(SERVER_URL, {
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 5
-    });
-    
-    // Connection events
-    socket.on('connect', () => {
-        console.log('✓ Connected to server! Socket ID:', socket.id);
-        updateConnectionStatus(true);
-    });
-    
-    socket.on('disconnect', () => {
-        console.log('✗ Disconnected from server');
-        updateConnectionStatus(false);
-    });
-    
-    socket.on('connect_error', (error) => {
-        console.error('❌ Connection error:', error);
-        updateConnectionStatus(false);
-    });
-    
-    // Chat events
-    socket.on('chat-history', (messages) => {
-        loadChatHistory(messages);
-    });
-    
-    socket.on('chat-message', (data) => {
-        const isOwn = data.username === currentUsername;
-        addMessage(data.username, data.text, data.timestamp, isOwn, 'delivered');
-    });
-    
-    socket.on('user-joined', (data) => {
-        addSystemMessage(`${data.username} joined the chat`);
-        updateOnlineUsers(data.onlineUsers);
-    });
-    
-    socket.on('user-left', (data) => {
-        addSystemMessage(`${data.username} left the chat`);
-        updateOnlineUsers(data.onlineUsers);
-        typingUsers.delete(data.username);
-        updateTypingIndicator();
-    });
-    
-    socket.on('online-users', (users) => {
-        updateOnlineUsers(users);
-    });
-    
-    socket.on('user-typing', (data) => {
-        if (data.isTyping) {
-            typingUsers.add(data.username);
-        } else {
-            typingUsers.delete(data.username);
-        }
-        updateTypingIndicator();
-    });
-    
-    socket.on('error', (data) => {
-        console.error('Server error:', data.message);
-        alert(data.message);
-    });
+function subscribeToMessages() {
+    messageSubscription = supabaseClient
+        .channel('messages')
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages' },
+            (payload) => {
+                console.log('📨 New message:', payload.new);
+                const msg = payload.new;
+                const isOwn = msg.username === currentUsername;
+                addMessage(msg.username, msg.text, msg.created_at, isOwn, 'delivered');
+            }
+        )
+        .subscribe((status) => {
+            console.log('Message subscription:', status);
+            if (status === 'SUBSCRIBED') {
+                updateConnectionStatus(true);
+            }
+        });
 }
 
-/**
- * Update connection status indicator
- */
+function subscribeToPresence() {
+    presenceChannel = supabaseClient.channel('online-users', {
+        config: {
+            presence: { key: currentUserId }
+        }
+    });
+    
+    presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+            const state = presenceChannel.presenceState();
+            updateOnlineUsers(state);
+            
+            typingUsers.clear();
+            Object.values(state).forEach(presences => {
+                presences.forEach(presence => {
+                    if (presence.typing && presence.username !== currentUsername) {
+                        typingUsers.add(presence.username);
+                    }
+                });
+            });
+            updateTypingIndicator();
+        })
+        .on('presence', { event: 'join' }, ({ newPresences }) => {
+            const username = newPresences[0].username;
+            if (username !== currentUsername) {
+                addSystemMessage(`${username} joined the chat`);
+            }
+        })
+        .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+            const username = leftPresences[0].username;
+            if (username !== currentUsername) {
+                addSystemMessage(`${username} left the chat`);
+            }
+            typingUsers.delete(username);
+            updateTypingIndicator();
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await presenceChannel.track({ 
+                    username: currentUsername,
+                    typing: false
+                });
+            }
+        });
+}
+
 function updateConnectionStatus(isConnected) {
     const statusText = document.querySelector('.connection-status');
     const indicator = statusText.querySelector('.status-indicator');
@@ -345,10 +319,7 @@ function updateConnectionStatus(isConnected) {
 
 // ==================== Form Handlers ====================
 
-/**
- * Handle join form submission
- */
-joinForm.addEventListener('submit', (e) => {
+joinForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const username = usernameInput.value.trim();
@@ -358,75 +329,76 @@ joinForm.addEventListener('submit', (e) => {
     }
     
     currentUsername = username;
+    currentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Switch screens
     joinScreen.classList.remove('active');
     chatScreen.classList.add('active');
     
-    // Enable input
     messageInput.disabled = false;
     sendButton.disabled = false;
     messageInput.focus();
     
-    // Emit join event
-    socket.emit('user-join', username);
+    await loadChatHistory();
+    subscribeToMessages();
+    subscribeToPresence();
 });
 
-/**
- * Handle message form submission
- */
-messageForm.addEventListener('submit', (e) => {
+messageForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const text = messageInput.value.trim();
     if (!text) return;
     
-    // Send message
-    socket.emit('chat-message', { text });
-    
-    // Clear input
     messageInput.value = '';
     
-    // Stop typing indicator
-    if (isTyping) {
+    if (isTyping && presenceChannel) {
         isTyping = false;
-        socket.emit('typing-stop');
+        presenceChannel.track({ username: currentUsername, typing: false });
         clearTimeout(typingTimeout);
+    }
+    
+    try {
+        const { error } = await supabaseClient
+            .from('messages')
+            .insert([{ username: currentUsername, text: text }]);
+        
+        if (error) throw error;
+    } catch (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message');
     }
 });
 
-/**
- * Handle typing in message input
- */
 messageInput.addEventListener('input', () => {
     if (messageInput.value.trim()) {
         handleTypingStart();
     }
 });
 
-/**
- * Handle sidebar toggle
- */
 toggleSidebarBtn.addEventListener('click', () => {
     sidebar.classList.toggle('hidden');
     const icon = toggleSidebarBtn.querySelector('span');
     icon.textContent = sidebar.classList.contains('hidden') ? '▶' : '◀';
 });
 
+// ==================== Cleanup ====================
+
+window.addEventListener('beforeunload', () => {
+    if (messageSubscription) supabaseClient.removeChannel(messageSubscription);
+    if (presenceChannel) {
+        presenceChannel.untrack();
+        supabaseClient.removeChannel(presenceChannel);
+    }
+});
+
 // ==================== Initialization ====================
 
-/**
- * Initialize the application
- */
 function init() {
-    console.log('Initializing chat application...');
-    initializeSocket();
-    
-    // Focus username input on load
+    console.log('🚀 Chat app with Vercel + Supabase Realtime');
+    updateConnectionStatus(false);
     usernameInput.focus();
 }
 
-// Start the app when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {

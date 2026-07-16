@@ -1,0 +1,16 @@
+{
+  "name": "chat-room-vercel",
+  "version": "1.0.0",
+  "description": "Real-time chat application on Vercel",
+  "main": "api/messages.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
