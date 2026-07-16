@@ -1,6 +1,6 @@
 // ==================== Configuration ====================
-// Use same domain for both frontend and backend
-const SERVER_URL = window.location.origin;  // Uses same Vercel URL
+// Backend URL - update this with your ngrok URL when running locally
+const SERVER_URL = 'http://localhost:3000';  // Change to your ngrok URL for production
 
 console.log('🔌 Connecting to:', SERVER_URL);  // Debug log
 

@@ -2,12 +2,16 @@ services:
   - type: web
     name: chat-room-backend
     runtime: node
-    buildCommand: cd backend && npm install
-    startCommand: cd backend && npm start
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    rootDir: backend
     envVars:
       - key: PORT
         value: 10000
       - key: SUPABASE_URL
-        sync: false
+        value: https://jgyvmrhjmjsswyqdglbp.supabase.co
       - key: SUPABASE_SERVICE_KEY
-        sync: false
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpneXZtcmhqbWpzc3d5cWRnbGJwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NDEwNzE5NSwiZXhwIjoyMDk5NjgzMTk1fQ.mMzGK_Zu2WtMWR71XKGM29cqZuGX5kT7eylsrR_o-b4
+
