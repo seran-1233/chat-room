@@ -358,14 +358,23 @@ messageForm.addEventListener('submit', async (e) => {
     }
     
     try {
-        const { error } = await supabaseClient
+        console.log('📤 Sending message:', { username: currentUsername, text });
+        
+        const { data, error } = await supabaseClient
             .from('messages')
             .insert([{ username: currentUsername, text: text }]);
         
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Supabase error:', error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
+            alert('Failed to send message: ' + error.message);
+            throw error;
+        }
+        
+        console.log('✅ Message sent successfully!', data);
     } catch (error) {
-        console.error('Error sending message:', error);
-        alert('Failed to send message');
+        console.error('❌ Catch error:', error);
+        alert('Failed to send message: ' + (error.message || 'Unknown error'));
     }
 });
 
