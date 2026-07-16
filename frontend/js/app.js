@@ -1,7 +1,7 @@
 // ==================== Configuration ====================
 // Supabase Configuration - everything runs on Vercel!
 const SUPABASE_URL = 'https://jgyvmrhjmjsswyqdglbp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpneXZtcmhqbWpzc3d5cWRnbGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDcxOTUsImV4cCI6MjA5OTY4MzE5NX0.YjL5qGVYYXqT-s8pIvLSqE3n_YFqbxT7XYn5qGVYYXo';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpneXZtcmhqbWpzc3d5cWRnbGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDcxOTUsImV4cCI6MjA5OTY4MzE5NX0.cKTJPB6JL8pmK-biGwF2ZgPSf09s1Ub88mM78fhOWEE';
 
 console.log('🔌 Connecting to Supabase Realtime (Vercel Compatible)');
 
