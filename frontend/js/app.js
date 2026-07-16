@@ -1,22 +1,15 @@
 // ==================== Configuration ====================
-// Supabase Configuration
-const SUPABASE_URL = 'https://jgyvmrhjmjsswyqdglbp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpneXZtcmhqbWpzc3d5cWRnbGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDcxOTUsImV4cCI6MjA5OTY4MzE5NX0.YjL5qGVYYXqT-s8pIvLSqE3n_YFqbxT7XYn5qGVYYXo';
+// Backend URL - update this with your ngrok URL when running locally
+const SERVER_URL = 'http://localhost:3000';  // Change to your ngrok URL for production
 
-console.log('🔌 Connecting to Supabase Realtime');
-
-// Initialize Supabase client
-const { createClient } = supabase;
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+console.log('🔌 Connecting to:', SERVER_URL);  // Debug log
 
 // ==================== State Management ====================
+let socket = null;
 let currentUsername = '';
-let currentUserId = null;
 let isTyping = false;
 let typingTimeout = null;
 const typingUsers = new Set();
-let messageSubscription = null;
-let presenceChannel = null;
 
 // ==================== DOM Elements ====================
 const joinScreen = document.getElementById('join-screen');
@@ -170,25 +163,12 @@ function addSystemMessage(text) {
 /**
  * Load chat history
  */
-async function loadChatHistory() {
-    try {
-        const { data: messages, error } = await supabaseClient
-            .from('messages')
-            .select('*')
-            .order('created_at', { ascending: true })
-            .limit(100);
-        
-        if (error) throw error;
-        
-        messages.forEach(msg => {
-            const isOwn = msg.username === currentUsername;
-            addMessage(msg.username, msg.text, msg.created_at, isOwn, 'delivered');
-        });
-        scrollToBottom();
-        console.log('✓ Loaded', messages.length, 'messages');
-    } catch (error) {
-        console.error('Error loading chat history:', error);
-    }
+function loadChatHistory(messages) {
+    messages.forEach(msg => {
+        const isOwn = msg.username === currentUsername;
+        addMessage(msg.username, msg.text, msg.created_at, isOwn, 'delivered');
+    });
+    scrollToBottom();
 }
 
 // ==================== Online Users Management ====================
@@ -196,9 +176,7 @@ async function loadChatHistory() {
 /**
  * Update online users list
  */
-function updateOnlineUsers(presenceState) {
-    const users = Object.values(presenceState).map(presence => presence[0].username);
-    
+function updateOnlineUsers(users) {
     onlineUsersList.innerHTML = '';
     onlineCount.textContent = `${users.length} online`;
     
@@ -264,110 +242,87 @@ function updateTypingIndicator() {
  * Handle typing start
  */
 function handleTypingStart() {
-    if (!isTyping && presenceChannel) {
+    if (!isTyping) {
         isTyping = true;
-        presenceChannel.track({ 
-            username: currentUsername, 
-            typing: true 
-        });
+        socket.emit('typing-start');
     }
     
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
-        if (isTyping && presenceChannel) {
-            isTyping = false;
-            presenceChannel.track({ 
-                username: currentUsername, 
-                typing: false 
-            });
-        }
+        isTyping = false;
+        socket.emit('typing-stop');
     }, 2000);
 }
 
-// ==================== Realtime Subscriptions ====================
+// ==================== Socket Event Handlers ====================
 
 /**
- * Subscribe to new messages
+ * Initialize Socket.IO connection
  */
-function subscribeToMessages() {
-    messageSubscription = supabaseClient
-        .channel('messages')
-        .on(
-            'postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'messages' },
-            (payload) => {
-                console.log('📨 New message received:', payload.new);
-                const msg = payload.new;
-                const isOwn = msg.username === currentUsername;
-                addMessage(msg.username, msg.text, msg.created_at, isOwn, 'delivered');
-            }
-        )
-        .subscribe((status) => {
-            console.log('Message subscription status:', status);
-            if (status === 'SUBSCRIBED') {
-                console.log('✓ Subscribed to messages');
-                updateConnectionStatus(true);
-            }
-        });
-}
-
-/**
- * Subscribe to presence (online users and typing)
- */
-function subscribeToPresence() {
-    presenceChannel = supabaseClient.channel('online-users', {
-        config: {
-            presence: {
-                key: currentUserId
-            }
-        }
+function initializeSocket() {
+    console.log('🔌 Initializing Socket.IO connection to:', SERVER_URL);
+    
+    socket = io(SERVER_URL, {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5
     });
     
-    // Track this user
-    presenceChannel
-        .on('presence', { event: 'sync' }, () => {
-            const state = presenceChannel.presenceState();
-            console.log('👥 Presence synced:', state);
-            updateOnlineUsers(state);
-            
-            // Update typing indicators
-            typingUsers.clear();
-            Object.values(state).forEach(presences => {
-                presences.forEach(presence => {
-                    if (presence.typing && presence.username !== currentUsername) {
-                        typingUsers.add(presence.username);
-                    }
-                });
-            });
-            updateTypingIndicator();
-        })
-        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-            console.log('👋 User joined:', newPresences);
-            const username = newPresences[0].username;
-            if (username !== currentUsername) {
-                addSystemMessage(`${username} joined the chat`);
-            }
-        })
-        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-            console.log('👋 User left:', leftPresences);
-            const username = leftPresences[0].username;
-            if (username !== currentUsername) {
-                addSystemMessage(`${username} left the chat`);
-            }
-            typingUsers.delete(username);
-            updateTypingIndicator();
-        })
-        .subscribe(async (status) => {
-            console.log('Presence subscription status:', status);
-            if (status === 'SUBSCRIBED') {
-                console.log('✓ Subscribed to presence');
-                await presenceChannel.track({ 
-                    username: currentUsername,
-                    typing: false,
-                    online_at: new Date().toISOString()
-                });
-            }
-        });
+    // Connection events
+    socket.on('connect', () => {
+        console.log('✓ Connected to server! Socket ID:', socket.id);
+        updateConnectionStatus(true);
+    });
+    
+    socket.on('disconnect', () => {
+        console.log('✗ Disconnected from server');
+        updateConnectionStatus(false);
+    });
+    
+    socket.on('connect_error', (error) => {
+        console.error('❌ Connection error:', error);
+        updateConnectionStatus(false);
+    });
+    
+    // Chat events
+    socket.on('chat-history', (messages) => {
+        loadChatHistory(messages);
+    });
+    
+    socket.on('chat-message', (data) => {
+        const isOwn = data.username === currentUsername;
+        addMessage(data.username, data.text, data.timestamp, isOwn, 'delivered');
+    });
+    
+    socket.on('user-joined', (data) => {
+        addSystemMessage(`${data.username} joined the chat`);
+        updateOnlineUsers(data.onlineUsers);
+    });
+    
+    socket.on('user-left', (data) => {
+        addSystemMessage(`${data.username} left the chat`);
+        updateOnlineUsers(data.onlineUsers);
+        typingUsers.delete(data.username);
+        updateTypingIndicator();
+    });
+    
+    socket.on('online-users', (users) => {
+        updateOnlineUsers(users);
+    });
+    
+    socket.on('user-typing', (data) => {
+        if (data.isTyping) {
+            typingUsers.add(data.username);
+        } else {
+            typingUsers.delete(data.username);
+        }
+        updateTypingIndicator();
+    });
+    
+    socket.on('error', (data) => {
+        console.error('Server error:', data.message);
+        alert(data.message);
+    });
 }
 
 /**
@@ -393,7 +348,7 @@ function updateConnectionStatus(isConnected) {
 /**
  * Handle join form submission
  */
-joinForm.addEventListener('submit', async (e) => {
+joinForm.addEventListener('submit', (e) => {
     e.preventDefault();
     
     const username = usernameInput.value.trim();
@@ -403,7 +358,6 @@ joinForm.addEventListener('submit', async (e) => {
     }
     
     currentUsername = username;
-    currentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Switch screens
     joinScreen.classList.remove('active');
@@ -414,54 +368,30 @@ joinForm.addEventListener('submit', async (e) => {
     sendButton.disabled = false;
     messageInput.focus();
     
-    // Load chat history
-    await loadChatHistory();
-    
-    // Subscribe to realtime updates
-    subscribeToMessages();
-    subscribeToPresence();
+    // Emit join event
+    socket.emit('user-join', username);
 });
 
 /**
  * Handle message form submission
  */
-messageForm.addEventListener('submit', async (e) => {
+messageForm.addEventListener('submit', (e) => {
     e.preventDefault();
     
     const text = messageInput.value.trim();
     if (!text) return;
     
+    // Send message
+    socket.emit('chat-message', { text });
+    
     // Clear input
     messageInput.value = '';
     
     // Stop typing indicator
-    if (isTyping && presenceChannel) {
+    if (isTyping) {
         isTyping = false;
-        presenceChannel.track({ 
-            username: currentUsername, 
-            typing: false 
-        });
+        socket.emit('typing-stop');
         clearTimeout(typingTimeout);
-    }
-    
-    // Send message to Supabase
-    try {
-        const { data, error } = await supabaseClient
-            .from('messages')
-            .insert([
-                { 
-                    username: currentUsername, 
-                    text: text,
-                    created_at: new Date().toISOString()
-                }
-            ])
-            .select();
-        
-        if (error) throw error;
-        console.log('✓ Message sent:', data);
-    } catch (error) {
-        console.error('Error sending message:', error);
-        alert('Failed to send message');
     }
 });
 
@@ -483,29 +413,14 @@ toggleSidebarBtn.addEventListener('click', () => {
     icon.textContent = sidebar.classList.contains('hidden') ? '▶' : '◀';
 });
 
-// ==================== Cleanup ====================
-
-/**
- * Cleanup on page unload
- */
-window.addEventListener('beforeunload', () => {
-    if (messageSubscription) {
-        supabaseClient.removeChannel(messageSubscription);
-    }
-    if (presenceChannel) {
-        presenceChannel.untrack();
-        supabaseClient.removeChannel(presenceChannel);
-    }
-});
-
 // ==================== Initialization ====================
 
 /**
  * Initialize the application
  */
 function init() {
-    console.log('🚀 Initializing chat application with Supabase Realtime');
-    updateConnectionStatus(false);
+    console.log('Initializing chat application...');
+    initializeSocket();
     
     // Focus username input on load
     usernameInput.focus();

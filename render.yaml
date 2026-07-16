@@ -4,9 +4,8 @@ services:
     runtime: node
     region: singapore
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
-    rootDir: backend
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
     envVars:
       - key: PORT
         value: 10000
@@ -14,4 +13,3 @@ services:
         value: https://jgyvmrhjmjsswyqdglbp.supabase.co
       - key: SUPABASE_SERVICE_KEY
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpneXZtcmhqbWpzc3d5cWRnbGJwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NDEwNzE5NSwiZXhwIjoyMDk5NjgzMTk1fQ.mMzGK_Zu2WtMWR71XKGM29cqZuGX5kT7eylsrR_o-b4
-
